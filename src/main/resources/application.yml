@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-image-platform
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/ai_image_platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  security:
+    jwt:
+      # 生产环境请使用 32+ bytes 的随机密钥，并通过环境变量注入
+      secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_32_BYTES_MINIMUM"
+      issuer: "ai-image-platform"
+      expire-seconds: 604800
+      sso-enabled: true
+
+  bridge:
+    base-url: "http://127.0.0.1:7861"
+    request-timeout-seconds: 60
+    retry:
+      max-attempts: 3
+      backoff-millis: 500

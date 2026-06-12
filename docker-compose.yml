@@ -1,0 +1,44 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: aiip-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ai_image_platform
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - ./docker/mysql/data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    container_name: aiip-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./docker/redis/data:/data
+
+#  app:
+#    build: .
+#    container_name: aiip-app
+#    depends_on:
+#      - mysql
+#      - redis
+#    environment:
+#      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ai_image_platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+#      SPRING_DATASOURCE_USERNAME: root
+#      SPRING_DATASOURCE_PASSWORD: root
+#      SPRING_DATA_REDIS_HOST: redis
+#      SPRING_DATA_REDIS_PORT: 6379
+#      APP_SECURITY_JWT_SECRET: CHANGE_ME_TO_A_LONG_RANDOM_SECRET_32_BYTES_MINIMUM
+#    ports:
+#      - "8080:8080"
