@@ -1,11 +1,15 @@
 package com.example.aiplatform.task;
 
+import com.example.aiplatform.bridge.BridgeClient;
+import com.example.aiplatform.bridge.dto.BridgeGenerateImageRequest;
+import com.example.aiplatform.bridge.dto.BridgeGenerateImageResponse;
 import com.example.aiplatform.entity.ImageTask;
 import com.example.aiplatform.service.ImageTaskService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -15,22 +19,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Redis Worker：
- * 1) 从 image:task:queue (List) 拉取任务
- * 2) 处理失败重试 3 次（延迟重试队列 ZSET）
- * 3) 超过次数进入死信队列 image:task:dlq
- *
- * 注意：当前阶段仅做"Worker消费"框架，真正调用 Python Bridge 在下一阶段接入。
+ * Redis Worker：异步闭环
+ * - Producer: 提交 taskId 到 Redis List
+ * - Consumer: BRPOP 拉取 taskId
+ * - Spring Worker 调用 Python Bridge (/generate-image)
+ * - 回写 DB 状态：PENDING -> PROCESSING -> DONE/FAILED
+ * - 失败重试 3 次（ZSET 延迟队列），超过进入 DLQ
  */
 @Component
-@EnableScheduling
 public class TaskConsumer implements InitializingBean, DisposableBean {
+
+    private static final Logger log = LoggerFactory.getLogger(TaskConsumer.class);
 
     private static final int MAX_RETRIES = 3;
 
     private final StringRedisTemplate redisTemplate;
     private final TaskProducer producer;
     private final ImageTaskService imageTaskService;
+    private final BridgeClient bridgeClient;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r);
@@ -43,10 +49,12 @@ public class TaskConsumer implements InitializingBean, DisposableBean {
 
     public TaskConsumer(StringRedisTemplate redisTemplate,
                         TaskProducer producer,
-                        ImageTaskService imageTaskService) {
+                        ImageTaskService imageTaskService,
+                        BridgeClient bridgeClient) {
         this.redisTemplate = redisTemplate;
         this.producer = producer;
         this.imageTaskService = imageTaskService;
+        this.bridgeClient = bridgeClient;
     }
 
     @Override
@@ -56,31 +64,53 @@ public class TaskConsumer implements InitializingBean, DisposableBean {
 
     private void loop() {
         while (running) {
+            String taskIdStr = null;
+            Long taskId = null;
             try {
                 // 阻塞式消费：BRPOP key timeout
-                // Spring Data Redis: rightPop(key, timeout)
-                String taskIdStr = redisTemplate.opsForList()
+                taskIdStr = redisTemplate.opsForList()
                         .rightPop(TaskProducer.QUEUE_KEY, Duration.ofSeconds(5));
 
                 if (taskIdStr == null || taskIdStr.isBlank()) {
                     continue;
                 }
 
-                Long taskId = Long.parseLong(taskIdStr);
+                taskId = Long.parseLong(taskIdStr);
 
-                // 标记 processing（状态机校验在 service 内）
+                // PENDING/FAILED -> PROCESSING
                 imageTaskService.markProcessing(taskId);
 
-                // TODO: 下一阶段在这里调用 Python Bridge / ComfyUI
-                // 当前阶段先模拟成功（实际接入后改为 DONE/FAILED）
-                // imageTaskService.markDone(taskId, "", "");
+                ImageTask t = imageTaskService.getById(taskId);
+                if (t == null) {
+                    log.warn("Task not found in db, drop. taskId={}", taskId);
+                    continue;
+                }
 
-                // 这里为了演示重试机制，默认不自动 DONE：让调用方或下一阶段接入来更新
+                BridgeGenerateImageRequest req = new BridgeGenerateImageRequest();
+                req.setRequestId(t.getRequestId());
+                req.setPrompt(t.getPrompt());
+                req.setNegativePrompt(t.getNegativePrompt());
+
+                BridgeGenerateImageResponse resp = bridgeClient.generateImage(req);
+
+                // DONE: 要求保存 image_path（优先 localPath；没有则退化用 imageUrl）
+                String imagePath = resp == null ? null : resp.getLocalPath();
+                if (imagePath == null || imagePath.isBlank()) {
+                    imagePath = resp == null ? null : resp.getImageUrl();
+                }
+
+                imageTaskService.markDone(taskId, resp == null ? null : resp.getImageUrl(), imagePath);
 
             } catch (Exception e) {
-                // 如果在处理时抛异常：尝试重试
-                // 注意：这里拿不到 taskId（除非更精细的 try/catch），所以使用较保守策略：忽略。
-                // 企业级实现应在每个任务处理块内 catch 并处理重试。
+                // 失败：重试/死信
+                if (taskId != null) {
+                    String reason = e.getMessage() == null ? e.toString() : e.getMessage();
+                    log.warn("Task failed taskId={}, will retry/dlq. err={}", taskId, reason);
+                    onTaskFailed(taskId, reason);
+                } else {
+                    log.warn("Worker loop error before parsing taskId. raw={}, err={}", taskIdStr, e.toString());
+                    sleepQuietly(500);
+                }
             }
         }
     }
@@ -95,17 +125,15 @@ public class TaskConsumer implements InitializingBean, DisposableBean {
         if (due == null || due.isEmpty()) return;
 
         for (String taskIdStr : due) {
-            // 先从 ZSET 移除，避免重复投递
             Long removed = redisTemplate.opsForZSet().remove(TaskProducer.RETRY_ZSET_KEY, taskIdStr);
             if (removed == null || removed == 0) continue;
-
             redisTemplate.opsForList().leftPush(TaskProducer.QUEUE_KEY, taskIdStr);
         }
     }
 
     /**
-     * 对外提供：当 Python Bridge 调用失败时，触发重试。
-     * 当前阶段先写好：按 image_tasks.retry_count 计数。
+     * 失败重试：最多 3 次。超过进入 DLQ。
+     * 说明：retry_count 计数写在 DB（当前项目最小闭环，不额外加组件）。
      */
     public void onTaskFailed(Long taskId, String reason) {
         ImageTask t = imageTaskService.getById(taskId);
@@ -113,26 +141,33 @@ public class TaskConsumer implements InitializingBean, DisposableBean {
 
         int retryCount = t.getRetryCount() == null ? 0 : t.getRetryCount();
         retryCount++;
+
+        // 直接更新 retry_count 字段（最小修改：走 mapper updateById）
         t.setRetryCount(retryCount);
+        // 用 service 的失败状态回写（若状态不允许会抛异常，但不影响重试调度）
+        try {
+            imageTaskService.markFailed(taskId, reason);
+        } catch (Exception ignore) {
+        }
+        // 再补一次 updateById，确保 retry_count 落库（markFailed 内部只更新 status/fail_reason）
+        try {
+            imageTaskService.updateRetryCount(taskId, retryCount);
+        } catch (Exception ignore) {
+        }
 
         if (retryCount <= MAX_RETRIES) {
-            // 标记 FAILED（也可以保持 PROCESSING，取决于你的审计策略；这里选择 FAILED + 延迟重试）
-            try {
-                imageTaskService.markFailed(taskId, reason);
-            } catch (Exception ignore) {
-                // 如果状态不允许 markFailed（例如还没 PROCESSING），也不要阻塞重试调度
-            }
-
-            // 指数退避：2, 4, 8 秒
-            long delaySeconds = (long) Math.pow(2, retryCount);
+            long delaySeconds = (long) Math.pow(2, retryCount); // 2,4,8
             producer.scheduleRetry(taskId, delaySeconds);
         } else {
-            // 入死信队列
-            try {
-                imageTaskService.markFailed(taskId, "DLQ: " + reason);
-            } catch (Exception ignore) {
-            }
             producer.toDeadLetter(taskId, reason);
+        }
+    }
+
+    private void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
         }
     }
 

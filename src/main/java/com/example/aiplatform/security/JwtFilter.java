@@ -50,9 +50,10 @@ public class JwtFilter extends OncePerRequestFilter {
                 return;
             }
 
-            // 建立认证信息（不做角色权限，先空集合）
+            // 建立认证信息（principal 携带 userId/username/jti）
+            CustomUserPrincipal principal = new CustomUserPrincipal(userId, username, jti);
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(username, null, List.of());
+                    new UsernamePasswordAuthenticationToken(principal, null, List.of());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
