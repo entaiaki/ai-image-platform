@@ -27,8 +27,8 @@ public class ImageTaskController {
      */
     @PostMapping("/submit")
     public Result<Map<String, Object>> submit(Authentication authentication,
-                                              @RequestParam @NotBlank String prompt,
-                                              @RequestParam(required = false) String negativePrompt) {
+                                              @RequestParam("prompt") @NotBlank String prompt,
+                                              @RequestParam(value = "negativePrompt", required = false) String negativePrompt) {
         CustomUserPrincipal p = requirePrincipal(authentication);
 
         ImageTask t = imageTaskService.createTaskAndEnqueue(p.getUserId(), prompt, negativePrompt);
@@ -41,13 +41,13 @@ public class ImageTaskController {
     }
 
     @GetMapping("/{id}")
-    public Result<ImageTask> get(@PathVariable Long id) {
+    public Result<ImageTask> get(@PathVariable("id") Long id) {
         return Result.ok(imageTaskService.getById(id));
     }
 
     @GetMapping("/my")
     public Result<List<ImageTask>> myList(Authentication authentication,
-                                         @RequestParam(defaultValue = "50") int limit) {
+                                         @RequestParam(value = "limit", defaultValue = "50") int limit) {
         CustomUserPrincipal p = requirePrincipal(authentication);
         return Result.ok(imageTaskService.listByUser(p.getUserId(), limit));
     }

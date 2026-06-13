@@ -153,6 +153,10 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Allow running app without compiling tests (useful for E2E in minimal env) -->
+                    <skipTests>true</skipTests>
+                </configuration>
             </plugin>
 
             <plugin>

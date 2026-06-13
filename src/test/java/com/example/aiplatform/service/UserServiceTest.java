@@ -42,7 +42,7 @@ public class UserServiceTest {
     @Test
     void register_ok() {
         when(userMapper.selectOne(any())).thenReturn(null);
-        when(userMapper.insert(any())).thenAnswer(inv -> {
+        when(userMapper.insert(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
             u.setId(1L);
             return 1;

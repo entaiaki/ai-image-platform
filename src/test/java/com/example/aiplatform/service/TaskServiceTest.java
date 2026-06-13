@@ -29,7 +29,7 @@ public class TaskServiceTest {
 
     @Test
     void createTask_should_be_pending_and_push_event() {
-        when(imageTaskMapper.insert(any())).thenAnswer(inv -> {
+        when(imageTaskMapper.insert(any(ImageTask.class))).thenAnswer(inv -> {
             ImageTask t = inv.getArgument(0);
             t.setId(1L);
             return 1;
