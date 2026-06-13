@@ -61,7 +61,7 @@ public class BridgeClient {
                         .block();
 
                 long cost = StopWatchUtil.costMs(start);
-                log.info("BridgeClient.generateImage success requestId={}, costMs={}", req.getRequestId(), cost);
+                log.info("BridgeClient.generateImage success requestId={}, costMs={}, response={}", req.getRequestId(), cost, resp);
                 return resp;
 
             } catch (Exception e) {

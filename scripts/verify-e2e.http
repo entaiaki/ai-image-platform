@@ -1,0 +1,31 @@
+### Step1: Register (optional)
+POST http://localhost:8080/api/user/register
+Content-Type: application/json
+
+{
+  "username": "e2e_user",
+  "password": "Passw0rd!"
+}
+
+### Step2: Login -> get JWT
+# @name login
+POST http://localhost:8080/api/user/login
+Content-Type: application/json
+
+{
+  "username": "e2e_user",
+  "password": "Passw0rd!"
+}
+
+### Step3: Submit task
+# @name submit
+POST http://localhost:8080/api/tasks/submit?prompt=E2E%20test%20cat
+Authorization: Bearer {{login.response.body.data.token}}
+
+### Step4: Poll task until DONE/FAILED (run repeatedly)
+GET http://localhost:8080/api/tasks/{{submit.response.body.data.taskId}}
+Authorization: Bearer {{login.response.body.data.token}}
+
+### Step5: My history should contain the task
+GET http://localhost:8080/api/tasks/my?limit=20
+Authorization: Bearer {{login.response.body.data.token}}
