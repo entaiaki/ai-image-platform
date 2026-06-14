@@ -93,8 +93,13 @@ public class TaskConsumer implements InitializingBean, DisposableBean {
 
                 BridgeGenerateImageResponse resp = bridgeClient.generateImage(req);
 
-                // DONE: 要求保存 image_path（优先 localPath；没有则退化用 imageUrl）
+                // DONE: 要求保存 image_path（优先 localPath；再尝试 image_paths[0]；没有则退化用 imageUrl）
                 String imagePath = resp == null ? null : resp.getLocalPath();
+                if (imagePath == null || imagePath.isBlank()) {
+                    if (resp != null && resp.getImagePaths() != null && !resp.getImagePaths().isEmpty()) {
+                        imagePath = resp.getImagePaths().get(0);
+                    }
+                }
                 if (imagePath == null || imagePath.isBlank()) {
                     imagePath = resp == null ? null : resp.getImageUrl();
                 }

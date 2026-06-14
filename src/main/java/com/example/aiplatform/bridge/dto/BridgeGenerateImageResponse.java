@@ -19,6 +19,10 @@ public class BridgeGenerateImageResponse {
     @JsonAlias({"localPath", "local_path", "imagePath", "image_path", "outputPath", "output_path"})
     private String localPath;
 
+    /** Bridge v03 actual fields */
+    @JsonAlias({"image_paths", "imagePaths"})
+    private java.util.List<String> imagePaths;
+
     @JsonAlias({"message", "msg", "error", "error_message"})
     private String message;
 
@@ -37,6 +41,9 @@ public class BridgeGenerateImageResponse {
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
 
+    public java.util.List<String> getImagePaths() { return imagePaths; }
+    public void setImagePaths(java.util.List<String> imagePaths) { this.imagePaths = imagePaths; }
+
     @Override
     public String toString() {
         return "BridgeGenerateImageResponse{" +
@@ -44,6 +51,7 @@ public class BridgeGenerateImageResponse {
                 ", status='" + status + '\'' +
                 ", imageUrl='" + imageUrl + '\'' +
                 ", localPath='" + localPath + '\'' +
+                ", imagePaths=" + imagePaths +
                 ", message='" + message + '\'' +
                 '}';
     }
