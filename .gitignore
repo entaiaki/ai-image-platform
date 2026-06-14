@@ -1,0 +1,25 @@
+# Maven / Java
+/target/
+*.class
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local run logs / temp
+*.log
+spring-*.out
+spring-*.err
+login.json
+resp.json
+
+# Local tool bundles (kept out of repo)
+maven.zip
+/apache-maven-*/
+
+# QwenPaw/tooling
+/tool_results/
